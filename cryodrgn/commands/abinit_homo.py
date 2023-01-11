@@ -93,6 +93,21 @@ def add_args(parser):
         help="Windowing radius (default: %(default)s)",
     )
     parser.add_argument("--ind", type=os.path.abspath, help="Filter indices")
+    parser.add_argument(
+        "--lazy",
+        action="store_true",
+        help="Lazy loading if full dataset is too large to fit in memory (Should copy dataset to SSD)",
+    )
+    parser.add_argument(
+        "--datadir",
+        type=os.path.abspath,
+        help="Path prefix to particle stack if loading relative paths from a .star or .cs file",
+    )
+    parser.add_argument(
+        "--use-real",
+        action="store_true",
+        help="Use real space image for encoder (for convolutional encoder)",
+    )
 
     group = parser.add_argument_group("Tilt series")
     group.add_argument("--tilt", help="Particle stack file (.mrcs)")
@@ -478,15 +493,28 @@ def main(args):
         flog("Filtering image dataset with {}".format(args.ind))
         args.ind = pickle.load(open(args.ind, "rb"))
     if args.tilt is None:
-        data = dataset.MRCData(
-            args.particles,
-            norm=args.norm,
-            invert_data=args.invert_data,
-            ind=args.ind,
-            window=args.window,
-            window_r=args.window_r,
-            flog=flog,
-        )
+        if args.lazy:
+            data = dataset.LazyMRCData(
+                args.particles,
+                norm=args.norm,
+                invert_data=args.invert_data,
+                ind=args.ind,
+                keepreal=args.use_real,
+                window=args.window,
+                datadir=args.datadir,
+                window_r=args.window_r,
+                flog=flog,
+            )
+        else:
+            data = dataset.MRCData(
+                args.particles,
+                norm=args.norm,
+                invert_data=args.invert_data,
+                ind=args.ind,
+                window=args.window,
+                window_r=args.window_r,
+                flog=flog,
+            )
         tilt = None
     else:
         data = dataset.TiltMRCData(
