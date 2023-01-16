@@ -14,6 +14,9 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
+from torch.nn.parallel import DataParallel
+import torch.multiprocessing
+torch.multiprocessing.set_sharing_strategy('file_system')
 
 from cryodrgn import ctf, dataset, lie_tools, models, mrc, utils
 from cryodrgn.lattice import Lattice
@@ -77,36 +80,50 @@ def add_args(parser):
     parser.add_argument(
         "--seed", type=int, default=np.random.randint(0, 100000), help="Random seed"
     )
-    parser.add_argument(
+
+    group = parser.add_argument_group("Dataset loading")
+    group.add_argument(
         "--uninvert-data",
         dest="invert_data",
         action="store_false",
         help="Do not invert data sign",
     )
-    parser.add_argument(
+    group.add_argument(
         "--window", action="store_true", help="Real space windowing of dataset"
     )
-    parser.add_argument(
+    group.add_argument(
         "--window-r",
         type=float,
         default=0.85,
         help="Windowing radius (default: %(default)s)",
     )
-    parser.add_argument("--ind", type=os.path.abspath, help="Filter indices")
-    parser.add_argument(
+    group.add_argument("--ind", type=os.path.abspath, help="Filter indices")
+    group.add_argument(
         "--lazy",
         action="store_true",
         help="Lazy loading if full dataset is too large to fit in memory (Should copy dataset to SSD)",
     )
-    parser.add_argument(
+    group.add_argument(
         "--datadir",
         type=os.path.abspath,
         help="Path prefix to particle stack if loading relative paths from a .star or .cs file",
     )
-    parser.add_argument(
+    group.add_argument(
         "--use-real",
         action="store_true",
         help="Use real space image for encoder (for convolutional encoder)",
+    )
+    group.add_argument(
+        "--num-workers-per-gpu",
+        type=int,
+        default=4,
+        help="Number of num_workers of Dataloader (default: %(default)s)",
+    )
+    group.add_argument(
+        "--max-threads",
+        type=int,
+        default=16,
+        help="Maximum number of CPU cores for FFT parallelization (default: %(default)s)",
     )
 
     group = parser.add_argument_group("Tilt series")
@@ -183,6 +200,16 @@ def add_args(parser):
         "--reset-optim-after-pretrain",
         type=int,
         help="If set, reset the optimizer every N epochs",
+    )
+    group.add_argument(
+        "--multigpu",
+        action="store_true",
+        help="Parallelize training across all detected GPUs",
+    )
+    group.add_argument(
+        "--use-cupy",
+        action="store_true",
+        help="Use cupy to perform FFT when loading particles.",
     )
 
     group = parser.add_argument_group("Pose search parameters")
@@ -504,6 +531,7 @@ def main(args):
                 datadir=args.datadir,
                 window_r=args.window_r,
                 flog=flog,
+                use_cupy = args.use_cupy
             )
         else:
             data = dataset.MRCData(
@@ -514,6 +542,7 @@ def main(args):
                 window=args.window,
                 window_r=args.window_r,
                 flog=flog,
+                use_cupy = args.use_cupy
             )
         tilt = None
     else:
@@ -526,6 +555,7 @@ def main(args):
             window=args.window,
             window_r=args.window_r,
             flog=flog,
+            use_cupy = args.use_cupy
         )
         tilt = torch.tensor(utils.xrot(args.tilt_deg).astype(np.float32), device=device)
     D = data.D
@@ -602,7 +632,26 @@ def main(args):
     else:
         start_epoch = 0
 
-    data_iterator = DataLoader(data, batch_size=args.batch_size, shuffle=True)
+    num_workers_per_gpu = args.num_workers_per_gpu
+    if args.multigpu and torch.cuda.device_count() > 1:
+        log(f"Using {torch.cuda.device_count()} GPUs!")
+        args.batch_size *= torch.cuda.device_count()
+        cpu_count = os.cpu_count() or 1
+        if num_workers_per_gpu * torch.cuda.device_count() > cpu_count:
+            num_workers_per_gpu = max(1, cpu_count // torch.cuda.device_count())
+        log(f"Increasing batch size to {args.batch_size}")
+        model = DataParallel(model)
+    elif args.multigpu:
+        log(
+            f"WARNING: --multigpu selected, but {torch.cuda.device_count()} GPUs detected"
+        )
+
+    data_iterator = DataLoader(
+        data,
+        batch_size = args.batch_size,
+        shuffle = True,
+        num_workers = num_workers_per_gpu
+    )
 
     # pretrain decoder with random poses
     global_it = 0
