@@ -491,6 +491,7 @@ def make_model(args, D: int):
 
 
 def main(args):
+    lowest_loss = 1e9 ## record lowest loss
     t1 = dt.now()
     if not os.path.exists(args.outdir):
         os.makedirs(args.outdir)
@@ -756,9 +757,10 @@ def main(args):
                         epoch + 1, args.num_epochs, batch_it, Nimg, loss_item
                     )
                 )
+        epoch_loss = loss_accum / Nimg
         flog(
             "# =====> Epoch: {} Average loss = {:.4}; Finished in {}".format(
-                epoch + 1, loss_accum / Nimg, dt.now() - t2
+                epoch + 1, epoch_loss, dt.now() - t2
             )
         )
 
@@ -782,22 +784,24 @@ def main(args):
                 out_poses,
             )
 
-    if epoch is not None:
-        # save model weights and evaluate the model on 3D lattice
-        out_mrc = "{}/reconstruct.mrc".format(args.outdir)
-        out_weights = "{}/weights.pkl".format(args.outdir)
-        out_poses = "{}/pose.pkl".format(args.outdir)
-        save_checkpoint(
-            model,
-            lattice,
-            sorted_poses,
-            optim,
-            epoch,
-            data.norm,
-            out_mrc,
-            out_weights,
-            out_poses,
-        )
+        ## Save the best model with the lowest loss as the final model
+        if epoch_loss < lowest_loss:
+            # save model weights and evaluate the model on 3D lattice
+            out_mrc = "{}/reconstruct.mrc".format(args.outdir)
+            out_weights = "{}/weights.pkl".format(args.outdir)
+            out_poses = "{}/pose.pkl".format(args.outdir)
+            save_checkpoint(
+                model,
+                lattice,
+                sorted_poses,
+                optim,
+                epoch,
+                data.norm,
+                out_mrc,
+                out_weights,
+                out_poses,
+            )
+        lowest_loss = min(lowest_loss, epoch_loss)
 
         td = dt.now() - t1
         flog(
