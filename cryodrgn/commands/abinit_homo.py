@@ -531,7 +531,6 @@ def main(args):
                 window=args.window,
                 datadir=args.datadir,
                 window_r=args.window_r,
-                flog=flog,
                 use_cupy = args.use_cupy
             )
         else:
@@ -633,15 +632,15 @@ def main(args):
 
     num_workers_per_gpu = args.num_workers_per_gpu
     if args.multigpu and torch.cuda.device_count() > 1:
-        log(f"Using {torch.cuda.device_count()} GPUs!")
+        logger.info(f"Using {torch.cuda.device_count()} GPUs!")
         args.batch_size *= torch.cuda.device_count()
         cpu_count = os.cpu_count() or 1
         if num_workers_per_gpu * torch.cuda.device_count() > cpu_count:
             num_workers_per_gpu = max(1, cpu_count // torch.cuda.device_count())
-        log(f"Increasing batch size to {args.batch_size}")
+        logger.info(f"Increasing batch size to {args.batch_size}")
         model = DataParallel(model)
     elif args.multigpu:
-        log(
+        logger.info(
             f"WARNING: --multigpu selected, but {torch.cuda.device_count()} GPUs detected"
         )
 
