@@ -724,7 +724,7 @@ def main(args):
                 # bp = sorted_base_poses[ind_np]
                 bp = None
             else:
-                p, bp = None, None
+                p, bp = None, None ## will input poses of images in this epoch be replaced with poses searched from scratch?
 
             cc += len(batch[0])
             if args.pose_model_update_freq and cc > args.pose_model_update_freq:
@@ -745,6 +745,8 @@ def main(args):
                 ctf_params=c,
             )
             poses.append((ind.cpu().numpy(), pose))
+            ## poses = [
+            #  (ind_np, pose: (rot, trans) ), ...]
             base_poses.append((ind_np, base_pose))
             # logging
             loss_accum += loss_item * len(batch[0])
@@ -762,7 +764,7 @@ def main(args):
         )
 
         # sort pose
-        sorted_poses = sort_poses(poses) if poses else None
+        sorted_poses = sort_poses(poses) if poses else None ## loaded poses got replaced by model's poses
         # sorted_base_poses = sort_base_poses(base_poses)
 
         if args.checkpoint and epoch % args.checkpoint == 0:
