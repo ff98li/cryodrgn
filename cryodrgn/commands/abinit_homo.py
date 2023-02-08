@@ -541,7 +541,7 @@ def main(args):
                 ind=args.ind,
                 window=args.window,
                 window_r=args.window_r,
-                    use_cupy = args.use_cupy
+                use_cupy = args.use_cupy
             )
         tilt = None
     else:

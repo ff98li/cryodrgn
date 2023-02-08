@@ -102,6 +102,23 @@ def add_args(parser):
         type=os.path.abspath,
         help="Path prefix to particle stack if loading relative paths from a .star or .cs file",
     )
+    group.add_argument(
+        "--num-workers-per-gpu",
+        type=int,
+        default=4,
+        help="Number of num_workers of Dataloader (default: %(default)s)",
+    )
+    group.add_argument(
+        "--max-threads",
+        type=int,
+        default=16,
+        help="Maximum number of CPU cores for FFT parallelization, not for lazy loading mode (default: %(default)s)",
+    )
+    group.add_argument(
+        "--use-cupy",
+        action="store_true",
+        help="Use cupy to perform FFT when loading particles.",
+    )
 
     group = parser.add_argument_group("Training parameters")
     group.add_argument(
@@ -390,6 +407,7 @@ def main(args):
             window=args.window,
             datadir=args.datadir,
             window_r=args.window_r,
+            use_cupy = args.use_cupy
         )
     else:
         data = dataset.MRCData(
@@ -399,7 +417,9 @@ def main(args):
             ind=ind,
             window=args.window,
             datadir=args.datadir,
+            max_threads = args.max_threads,
             window_r=args.window_r,
+            use_cupy = args.use_cupy
         )
     D = data.D
     Nimg = data.N
@@ -501,7 +521,13 @@ def main(args):
         )
 
     # train
-    data_generator = DataLoader(data, batch_size=args.batch_size, shuffle=True)
+    num_workers_per_gpu = args.num_workers_per_gpu
+    data_generator = DataLoader(
+        data,
+        batch_size = args.batch_size,
+        shuffle = True,
+        num_workers = num_workers_per_gpu
+    )
     epoch = None
     for epoch in range(start_epoch, args.num_epochs):
         t2 = dt.now()
