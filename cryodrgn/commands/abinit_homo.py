@@ -541,6 +541,8 @@ def main(args):
                 ind=args.ind,
                 window=args.window,
                 window_r=args.window_r,
+                datadir=args.datadir,
+                max_threads=args.max_threads,
                 use_cupy = args.use_cupy
             )
         tilt = None

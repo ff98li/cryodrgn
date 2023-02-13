@@ -42,6 +42,17 @@ def add_args(parser):
         help="Do not invert data sign",
     )
     group.add_argument(
+        "--max-threads",
+        type=int,
+        default=16,
+        help="Maximum number of CPU cores for FFT parallelization (default: %(default)s)",
+    )
+    group.add_argument(
+        "--lazy",
+        action="store_true",
+        help="Lazy loading if full dataset is too large to fit in memory (Should copy dataset to SSD)",
+    )
+    group.add_argument(
         "--datadir",
         type=os.path.abspath,
         help="Path prefix to particle stack if loading relative paths from a .star or .cs file",
@@ -57,6 +68,16 @@ def add_args(parser):
         "--preprocessed",
         action="store_true",
         help="Skip preprocessing steps if input data is from cryodrgn preprocess_mrcs",
+    )
+    group.add_argument(
+        "--use-real",
+        action="store_true",
+        help="Use real space image for encoder (for convolutional encoder)",
+    )
+    group.add_argument(
+        "--use-cupy",
+        action="store_true",
+        help="Use cupy to perform FFT when loading particles.",
     )
 
     group = parser.add_argument_group("Tilt series options")
@@ -118,13 +139,27 @@ def main(args):
                 args.particles, norm=(0, 1), ind=args.ind
             )
         else:
-            data = dataset.LazyMRCData(
-                args.particles,
-                norm=(0, 1),
-                invert_data=args.invert_data,
-                datadir=args.datadir,
-                ind=args.ind,
-            )
+            if args.lazy:
+                data = dataset.LazyMRCData(
+                    args.particles,
+                    norm=(0, 1),
+                    invert_data=args.invert_data,
+                    datadir=args.datadir,
+                    ind=args.ind,
+                    keepreal=args.use_real,
+                    use_cupy = args.use_cupy
+                )
+            else:
+                data = dataset.MRCData(
+                    args.particles,
+                    norm=(0, 1),
+                    invert_data=args.invert_data,
+                    datadir=args.datadir,
+                    max_threads=args.max_threads,
+                    ind=args.ind,
+                    keepreal=args.use_real,
+                    use_cupy = args.use_cupy
+                )
         tilt = None
     else:  # tilt series
         if args.preprocessed:
@@ -136,6 +171,7 @@ def main(args):
             invert_data=args.invert_data,
             datadir=args.datadir,
             ind=args.ind,
+            use_cupy = args.use_cupy
         )
         tilt = torch.tensor(utils.xrot(args.tilt_deg).astype(np.float32), device=device)
     D = data.D
