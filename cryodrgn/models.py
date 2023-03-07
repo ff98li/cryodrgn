@@ -1,7 +1,13 @@
 """Pytorch models"""
 
 from typing import Optional, Tuple, Type, Union, Sequence, Any
+
 import numpy as np
+try:
+    import cupy as cp
+except ImportError:
+    cp = None
+
 import torch
 from torch import Tensor
 import torch.nn as nn
@@ -244,9 +250,13 @@ class PositionalDecoder(Decoder):
         enc_type="linear_lowf",
         enc_dim=None,
         feat_sigma: Optional[float] = None,
+        use_cupy = False
     ):
         super(PositionalDecoder, self).__init__()
         assert in_dim >= 3
+        
+        self.use_cupy = use_cupy
+
         self.zdim = in_dim - 3
         self.D = D
         self.D2 = D // 2
@@ -366,6 +376,8 @@ class PositionalDecoder(Decoder):
             norm: data normalization
             zval: value of latent (zdim x 1)
         """
+
+        pp = np if not self.use_cupy or cp is None else cp
         # Note: extent should be 0.5 by default, except when a downsampled
         # volume is generated
         assert extent <= 0.5
@@ -375,7 +387,7 @@ class PositionalDecoder(Decoder):
             zdim = len(zval)
             z = torch.tensor(zval, dtype=torch.float32, device=coords.device)
 
-        vol_f = np.zeros((D, D, D), dtype=np.float32)
+        vol_f = pp.zeros((D, D, D), dtype=np.float32)
         assert not self.training
         # evaluate the volume by zslice to avoid memory overflows
         for i, dz in enumerate(
@@ -386,7 +398,10 @@ class PositionalDecoder(Decoder):
                 x = torch.cat((x, z.expand(x.shape[0], zdim)), dim=-1)
             with torch.no_grad():
                 y = self.forward(x)
-                y = y.view(D, D).cpu().numpy()
+                if pp == cp:
+                    y = (pp.asarray(y)).reshape((D, D))
+                else:
+                    y = y.view(D, D).cpu().numpy()
             vol_f[i] = y
         vol_f = vol_f * norm[1] + norm[0]
         vol = fft.ihtn_center(
@@ -406,6 +421,7 @@ class FTPositionalDecoder(Decoder):
         enc_type: str = "linear_lowf",
         enc_dim: Optional[int] = None,
         feat_sigma: Optional[float] = None,
+        use_cupy: Optional[bool] = False
     ):
         super(FTPositionalDecoder, self).__init__()
         assert in_dim >= 3
@@ -738,6 +754,7 @@ def get_decoder(
     enc_dim: Optional[int] = None,
     activation: Type = nn.ReLU,
     feat_sigma: Optional[float] = None,
+    use_cupy: Optional[bool] = False
 ) -> Decoder:
     if enc_type == "none":
         if domain == "hartley":
@@ -755,6 +772,7 @@ def get_decoder(
             enc_type=enc_type,
             enc_dim=enc_dim,
             feat_sigma=feat_sigma,
+            use_cupy=use_cupy
         )
     return model
 

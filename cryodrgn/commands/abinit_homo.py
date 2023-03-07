@@ -207,7 +207,7 @@ def add_args(parser):
     group.add_argument(
         "--use-cupy",
         action="store_true",
-        help="Use cupy to perform FFT when loading particles.",
+        help="Use cupy to perform FFT when loading particles. (Will eat up your VRAM quickly!)",
     )
 
     group = parser.add_argument_group("Pose search parameters")
@@ -484,11 +484,14 @@ def make_model(args, D: int):
         enc_dim=args.pe_dim,
         activation=activation,
         feat_sigma=args.feat_sigma,
+        use_cupy=args.use_cupy
     )
 
 
 def main(args):
     lowest_loss = 1e9 ## record lowest loss
+
+
     if args.verbose:
         logger.setLevel(logging.DEBUG)
 
@@ -645,6 +648,11 @@ def main(args):
             f"WARNING: --multigpu selected, but {torch.cuda.device_count()} GPUs detected"
         )
 
+    ## https://github.com/pytorch/pytorch/issues/69887
+    ## cupy doesn't work well with multiprocessing
+    ## This is where cupy starts to eat up your VRAM.
+    if args.use_cupy:
+        torch.multiprocessing.set_start_method('spawn')
     data_iterator = DataLoader(
         data,
         batch_size = args.batch_size,

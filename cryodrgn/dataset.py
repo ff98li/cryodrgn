@@ -11,6 +11,7 @@ import multiprocessing as mp
 import os
 from multiprocessing import Pool
 import logging
+import torch
 from torch.utils import data
 
 from cryodrgn import fft, mrc, starfile, utils
@@ -69,7 +70,10 @@ class LazyMRCData(data.Dataset):
         datadir=None,
         window_r=0.85,
         use_cupy=False,
+        device = "cpu"
     ):
+        self.use_cupy = use_cupy  # estimate_normalization may need access to self.use_cupy, so save it first
+        self.device = device
         assert not keepreal, "Not implemented error"
         particles = load_particles(mrcfile, True, datadir=datadir)
         if ind is not None:
@@ -85,7 +89,6 @@ class LazyMRCData(data.Dataset):
         self.N = N
         self.D = ny + 1  # after symmetrizing HT
         self.invert_data = invert_data
-        self.use_cupy = use_cupy  # estimate_normalization may need access to self.use_cupy, so save it first
         if norm is None:
             norm = self.estimate_normalization()
         self.norm = norm
@@ -105,7 +108,7 @@ class LazyMRCData(data.Dataset):
             imgs *= -1
         imgs = fft.symmetrize_ht(imgs)
         norm = [pp.mean(imgs), pp.std(imgs)]
-        norm[0] = 0
+        norm[0] = pp.asarray(0) ## ??why 0?
         logger.info("Normalizing HT by {} +/- {}".format(*norm))
         return norm
 
@@ -115,12 +118,16 @@ class LazyMRCData(data.Dataset):
         img = self.particles[i].get()
         if self.window is not None:
             img *= self.window
+        img = pp.asarray(img)
         img = fft.ht2_center(img).astype(pp.float32)
         if self.invert_data:
             img *= -1
         img = fft.symmetrize_ht(img)
+        #logger.info("type of img: {}".format(type(img)))
+        #logger.info("type of mean: {}".format(type(self.norm[0])))
+        #logger.info("type of std: {}".format(type(self.norm[1])))
         img = (img - self.norm[0]) / self.norm[1]
-        return img
+        return torch.as_tensor(img, dtype = torch.float, device = self.device)
 
     def __len__(self):
         return self.N

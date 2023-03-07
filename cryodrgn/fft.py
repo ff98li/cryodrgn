@@ -53,7 +53,11 @@ def ihtn_center(V):
     V = pp.fft.fftshift(V)
     V = pp.fft.fftn(V)
     V = pp.fft.fftshift(V)
-    V /= pp.product(V.shape)
+    if pp == np:
+        V /= pp.prod(V.shape)
+    else:
+        ## https://github.com/cupy/cupy/issues/4466
+        V /= pp.asarray(V.shape).prod()
     return V.real - V.imag
 
 
